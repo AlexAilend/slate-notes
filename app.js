@@ -62,14 +62,14 @@
     const existing = state.bankState[current.id];
     if (!existing) state.bankState[current.id] = defaultBankState(current);
     else {
-      state.bankState[current.id] = {
-        ...defaultBankState(current),
-        ...existing,
-        statistics: {
-          ...defaultBankState(current).statistics,
-          ...(existing.statistics || {}),
-        },
-      };
+      const defaults = defaultBankState(current);
+      for (const key of Object.keys(defaults)) {
+        if (existing[key] === undefined) existing[key] = defaults[key];
+      }
+      if (!existing.statistics || typeof existing.statistics !== 'object') existing.statistics = defaults.statistics;
+      for (const key of Object.keys(defaults.statistics)) {
+        if (existing.statistics[key] === undefined) existing.statistics[key] = defaults.statistics[key];
+      }
     }
     return state.bankState[current.id];
   }
