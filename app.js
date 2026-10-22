@@ -88,6 +88,21 @@
     })[char]);
   }
 
+  function isOrdering(question) {
+    return Object.keys(question.options).length === 0 && question.answer.length > 1;
+  }
+
+  function sameAnswer(question, selected) {
+    return isOrdering(question)
+      ? selected.length === question.answer.length && selected.every((value, index) => value === question.answer[index])
+      : sameSet(selected, question.answer);
+  }
+
+  function orderingHtml(q, selected, checked) {
+    const choices = [...q.answer].sort();
+    return q.answer.map((_, index) => `<label class="option ${checked ? (selected[index] === q.answer[index] ? 'correct' : 'wrong') : ''}"><span class="letter">${index + 1}</span><select data-order="${index}" aria-label="Крок ${index + 1}" ${checked ? 'disabled' : ''}><option value="">Оберіть критерій…</option>${choices.map(value => `<option value="${escapeHtml(value)}" ${selected[index] === value ? 'selected' : ''}>${escapeHtml(value)}</option>`).join('')}</select></label>`).join('');
+  }
+
   function sameSet(left, right) {
     return left.length === right.length && [...left].sort().join('|') === [...right].sort().join('|');
   }
@@ -98,6 +113,7 @@
 
   function complete(question, selected) {
     if (!question) return false;
+    if (isOrdering(question)) return selected?.length === question.answer.length && selected.every(Boolean) && new Set(selected).size === question.answer.length;
     return (selected?.length || 0) === (question.correctCount || question.answer.length);
   }
 
@@ -232,7 +248,7 @@
     local.studyId = q.id;
     const selected = local.studyAnswers[q.id] || [];
     const checked = Boolean(local.studyChecked[q.id]);
-    const correct = sameSet(selected, q.answer);
+    const correct = sameAnswer(q, selected);
     const filtered = filteredStudy();
 
     $app.innerHTML = shell(`<main class="page">
@@ -309,7 +325,7 @@
     const selected = local.studyAnswers[q.id] || [];
     if (!complete(q, selected)) return;
     local.studyChecked[q.id] = true;
-    const ok = sameSet(selected, q.answer);
+    const ok = sameAnswer(q, selected);
     local.statistics.studyChecks += 1;
     if (ok) local.statistics.studyCorrect += 1;
     recordAttempt(q.id, ok);
@@ -319,12 +335,12 @@
 
   function questionCard(q, selected, checked, mode) {
     return `<article class="question-card">
-      <div class="question-top"><span>${escapeHtml(bank().product)} · Question ${q.id} of ${questions().length}</span><span>${q.correctCount === 1 ? 'Single answer' : `Choose ${q.correctCount}`}</span></div>
+      <div class="question-top"><span>${escapeHtml(bank().product)} · Question ${q.id} of ${questions().length}</span><span>${isOrdering(q) ? 'Arrange in order' : q.correctCount === 1 ? 'Single answer' : `Choose ${q.correctCount}`}</span></div>
       <h2 class="question-text">${escapeHtml(q.text)}</h2>
       ${q.note ? `<div class="exhibit-note">${escapeHtml(q.note)}</div>` : ''}
       ${q.image ? `<div class="exhibit"><img src="${escapeHtml(q.image)}" data-zoom alt="Exhibit for question ${q.id}"></div>` : ''}
-      <div class="instruction">Вибери рівно ${q.correctCount} ${q.correctCount === 1 ? 'відповідь' : 'відповіді'}</div>
-      <div class="options">${Object.entries(q.options).map(([key, value]) => optionHtml(q, key, value, selected, checked, mode)).join('')}</div>
+      <div class="instruction">${isOrdering(q) ? 'Розташуй критерії по порядку. Кожен використай один раз.' : `Вибери рівно ${q.correctCount} ${q.correctCount === 1 ? 'відповідь' : 'відповіді'}`}</div>
+      <div class="options">${isOrdering(q) ? orderingHtml(q, selected, checked) : Object.entries(q.options).map(([key, value]) => optionHtml(q, key, value, selected, checked, mode)).join('')}</div>
     </article>`;
   }
 
@@ -355,6 +371,18 @@
             return;
           }
         } else selected = selected.filter(item => item !== key);
+        store[q.id] = selected;
+        if (mode === 'study') local.studyChecked[q.id] = false;
+        save();
+        render();
+      };
+    });
+    document.querySelectorAll('[data-order]').forEach(select => {
+      select.onchange = event => {
+        if (locked) return;
+        const store = mode === 'study' ? local.studyAnswers : local.exam.answers;
+        const selected = Array.from({ length: q.answer.length }, (_, index) => store[q.id]?.[index] || '');
+        selected[Number(event.target.dataset.order)] = event.target.value;
         store[q.id] = selected;
         if (mode === 'study') local.studyChecked[q.id] = false;
         save();
@@ -458,7 +486,7 @@
     const review = ex.ids.map(id => {
       const q = map.get(id);
       const selected = ex.answers[id] || [];
-      const ok = sameSet(selected, q.answer);
+      const ok = sameAnswer(q, selected);
       if (ok) correct += 1;
       recordAttempt(id, ok);
       return { id, selected, correct: q.answer, ok };
